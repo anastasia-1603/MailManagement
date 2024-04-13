@@ -1,7 +1,7 @@
 from typing import Any
-
+import tkinter as tk
+from tkinter import ttk
 from customtkinter import *
-
 from new import main
 
 text_color = "#d9edff"
@@ -34,7 +34,6 @@ class App(CTk):
 
     def show_frame(self, cont):
         frame = self.frames[cont]
-        # frame.pack()
         frame.tkraise()
 
 
@@ -79,36 +78,49 @@ class AuthFrame(CTkFrame):
         mail_service = main.MailService(service, login, password)
         res = mail_service.auth()
         print(res)
+
         controller.show_frame(SettingsFrame)
-        # settings_frame = SettingsFrame(self, controller)
-        # settings_frame.pack()
-        # settings_frame.tkraise()
-        # if res[0] == "OK":
-        #     controller.show_frame(SettingsFrame)
 
 
 class SettingsFrame(CTkFrame):
     def __init__(self, master: Any, controller,  **kwargs):
         super().__init__(master, **kwargs)
 
-        # Создание кнопки добавления новой папки
-        self.add_folder_button = CTkButton(self, text="Добавить новую папку", command=self.add_new_folder)
-        self.add_folder_button.pack()
+        folders_data = {
+            "Folder1": {"messages": 10, "recipients": ["recipient1", "recipient2"]},
+            "Folder2": {"messages": 5, "recipients": ["recipient3", "recipient4"]},
+            "Folder3": {"messages": 8, "recipients": ["recipient5", "recipient6"]}
+        }
 
-    def add_new_folder(self):
-        # Создание нового окна для добавления новой папки
-        new_folder_window = CTkToplevel(self)
-        new_folder_window.title("Новая папка")
+        CTkLabel(self, text="Папки", text_color=text_color, font=('Arial', 16)).grid(row=0, column=0)
 
-        # Поле для ввода получателя
-        recipient_label = CTkLabel(new_folder_window, text="Получатель:")
-        recipient_label.pack()
-        recipient_entry = CTkEntry(new_folder_window)
-        recipient_entry.pack()
+        row = 1
+        for folder, data in folders_data.items():
+            label_folder = CTkLabel(self, text=f"{folder}", text_color=text_color,
+                                    font=('Arial', 14), padx=4, pady=4)
+            label_folder.grid(row=row, column=0, sticky="w", padx=4, pady=4)
 
-        # Кнопка сохранить
-        save_button = CTkButton(new_folder_window, text="Сохранить")
-        save_button.pack()
+            label_messages = CTkLabel(self, text=f"{data['messages']} писем",
+                                      text_color=text_color, font=('Arial', 14),
+                                      padx=4, pady=4)
+            label_messages.grid(row=row, column=1, sticky="ew", padx=4, pady=4,)
+
+            label_recipients = CTkLabel(self, text=f"Получатели: {', '.join(data['recipients'])}",
+                                        text_color=text_color, font=('Arial', 14),
+                                        padx=4, pady=4)
+            label_recipients.grid(row=row, column=2, sticky="e", padx=4, pady=4,)
+
+            row += 1
+
+
+            # label_folder = CTkLabel(self, text=f"Folder: {folder}")
+            # label_folder.pack()
+            #
+            # label_messages = CTkLabel(self, text=f"Messages: {data['messages']} писем")
+            # label_messages.pack()
+            #
+            # label_recipients = CTkLabel(self, text=f"Recipients: {', '.join(data['recipients'])}")
+            # label_recipients.pack()
 
 
 app = App()
