@@ -20,17 +20,19 @@ class App(CTk):
         container.grid_rowconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=1)
         self.frames = {}
+        auth_frame = AuthFrame(container, self)
+        auth_frame.grid(row=0, column=0, sticky="nsew")
+        auth_frame.tkraise()
+        # for F in (AuthFrame, SettingsFrame):
+        #     frame = F(container, self)
+        #
+        #     # initializing frame of that object from
+        #     # startpage, page1, page2 respectively with
+        #     # for loop
+        #     self.frames[F] = frame
+        #     frame.grid(row=0, column=0, sticky="nsew")
 
-        for F in (AuthFrame, SettingsFrame):
-            frame = F(container, self)
-
-            # initializing frame of that object from
-            # startpage, page1, page2 respectively with
-            # for loop
-            self.frames[F] = frame
-            frame.grid(row=0, column=0, sticky="nsew")
-
-        self.show_frame(AuthFrame)
+        # self.show_frame(AuthFrame)
 
     def show_frame(self, cont):
         frame = self.frames[cont]
@@ -38,7 +40,7 @@ class App(CTk):
 
 
 class AuthFrame(CTkFrame):
-    def __init__(self, master: Any, controller,  **kwargs):
+    def __init__(self, master: Any, controller, **kwargs):
         super().__init__(master, **kwargs)
         welcome_label = CTkLabel(master=self, text="Добро пожаловать!",
                                  font=("Arial", 20), text_color=text_color)
@@ -72,19 +74,27 @@ class AuthFrame(CTkFrame):
         submit_button.pack(anchor="n", expand=True, pady=20, padx=30)
 
     def submit(self, controller):
+        mail_pass = "7PP4ZDXqnv"
+        username = "lazutkina@cs.vsu.ru"
         service = self.service_dropdown.get()
-        login = self.login_entry.get()
-        password = self.password_entry.get()
+        # login = self.login_entry.get()
+
+        login = username
+        password = mail_pass
+        # password = self.password_entry.get()
         mail_service = main.MailService(service, login, password)
         res = mail_service.auth()
         print(res)
 
-        controller.show_frame(SettingsFrame)
+        settings_frame = SettingsFrame(controller, self, mail_service)
+        settings_frame.tkraise()
 
 
 class SettingsFrame(CTkFrame):
-    def __init__(self, master: Any, controller,  **kwargs):
+    def __init__(self, master: Any, controller, mail_service, **kwargs):
         super().__init__(master, **kwargs)
+
+        folders = mail_service.get_folders()
 
         folders_data = {
             "Folder1": {"messages": 10, "recipients": ["recipient1", "recipient2"]},
@@ -95,23 +105,22 @@ class SettingsFrame(CTkFrame):
         CTkLabel(self, text="Папки", text_color=text_color, font=('Arial', 16)).grid(row=0, column=0)
 
         row = 1
-        for folder, data in folders_data.items():
+        for folder in folders:
             label_folder = CTkLabel(self, text=f"{folder}", text_color=text_color,
                                     font=('Arial', 14), padx=4, pady=4)
             label_folder.grid(row=row, column=0, sticky="w", padx=4, pady=4)
 
-            label_messages = CTkLabel(self, text=f"{data['messages']} писем",
-                                      text_color=text_color, font=('Arial', 14),
-                                      padx=4, pady=4)
-            label_messages.grid(row=row, column=1, sticky="ew", padx=4, pady=4,)
-
-            label_recipients = CTkLabel(self, text=f"Получатели: {', '.join(data['recipients'])}",
-                                        text_color=text_color, font=('Arial', 14),
-                                        padx=4, pady=4)
-            label_recipients.grid(row=row, column=2, sticky="e", padx=4, pady=4,)
+            # label_messages = CTkLabel(self, text=f"{data['messages']} писем",
+            #                           text_color=text_color, font=('Arial', 14),
+            #                           padx=4, pady=4)
+            # label_messages.grid(row=row, column=1, sticky="ew", padx=4, pady=4,)
+            #
+            # label_recipients = CTkLabel(self, text=f"Получатели: {', '.join(data['recipients'])}",
+            #                             text_color=text_color, font=('Arial', 14),
+            #                             padx=4, pady=4)
+            # label_recipients.grid(row=row, column=2, sticky="e", padx=4, pady=4,)
 
             row += 1
-
 
             # label_folder = CTkLabel(self, text=f"Folder: {folder}")
             # label_folder.pack()
