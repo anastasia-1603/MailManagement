@@ -2,7 +2,7 @@ from typing import Any
 import tkinter as tk
 from tkinter import ttk
 from customtkinter import *
-from new import main
+from main import *
 
 text_color = "#d9edff"
 
@@ -15,33 +15,30 @@ class App(CTk):
         set_appearance_mode("dark")
         self.title("Выбор почтового сервиса")
         self.configure(bg='lightblue')
+        self.mail_service: MailService = None
+
         container = CTkFrame(self)
         container.pack(side="top", fill="both", expand=True)
         container.grid_rowconfigure(0, weight=1)
         container.grid_columnconfigure(0, weight=1)
-        self.frames = {}
-        auth_frame = AuthFrame(container, self)
-        auth_frame.grid(row=0, column=0, sticky="nsew")
-        auth_frame.tkraise()
-        # for F in (AuthFrame, SettingsFrame):
-        #     frame = F(container, self)
-        #
-        #     # initializing frame of that object from
-        #     # startpage, page1, page2 respectively with
-        #     # for loop
-        #     self.frames[F] = frame
-        #     frame.grid(row=0, column=0, sticky="nsew")
 
-        # self.show_frame(AuthFrame)
+        self.show_auth_frame(container)
 
-    def show_frame(self, cont):
-        frame = self.frames[cont]
+    def show_auth_frame(self, container):
+        frame = AuthFrame(parent=container, controller=self)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.tkraise()
+
+    def show_settings_frame(self, container, mail_service):
+        frame = SettingsFrame(parent=container, controller=self,
+                              mail_service=mail_service)
+        frame.grid(row=0, column=0, sticky="nsew")
         frame.tkraise()
 
 
 class AuthFrame(CTkFrame):
-    def __init__(self, master: Any, controller, **kwargs):
-        super().__init__(master, **kwargs)
+    def __init__(self, parent: Any, controller, **kwargs):
+        super().__init__(parent, **kwargs)
         welcome_label = CTkLabel(master=self, text="Добро пожаловать!",
                                  font=("Arial", 20), text_color=text_color)
 
@@ -60,7 +57,7 @@ class AuthFrame(CTkFrame):
 
         submit_button = CTkButton(master=self,
                                   text="Войти",
-                                  command=lambda: self.submit(controller),
+                                  command=lambda: self.submit(parent=parent, controller=controller),
                                   corner_radius=32,
                                   font=('Arial', 16))
 
@@ -73,7 +70,7 @@ class AuthFrame(CTkFrame):
         self.password_entry.pack(anchor="s", expand=True, pady=10, padx=30)
         submit_button.pack(anchor="n", expand=True, pady=20, padx=30)
 
-    def submit(self, controller):
+    def submit(self, parent, controller: App):
         mail_pass = "7PP4ZDXqnv"
         username = "lazutkina@cs.vsu.ru"
         service = self.service_dropdown.get()
@@ -82,17 +79,21 @@ class AuthFrame(CTkFrame):
         login = username
         password = mail_pass
         # password = self.password_entry.get()
-        mail_service = main.MailService(service, login, password)
+        mail_service = MailService(service, login, password)
         res = mail_service.auth()
         print(res)
 
-        settings_frame = SettingsFrame(controller, self, mail_service)
-        settings_frame.tkraise()
+        controller.show_settings_frame(parent, mail_service)
+
+        # settings_frame = SettingsFrame(controller, self, mail_service)
+        #
+        # settings_frame.pack_forget()
+        # settings_frame.tkraise()
 
 
 class SettingsFrame(CTkFrame):
-    def __init__(self, master: Any, controller, mail_service, **kwargs):
-        super().__init__(master, **kwargs)
+    def __init__(self, parent: Any, controller, mail_service: MailService, **kwargs):
+        super().__init__(parent, **kwargs)
 
         folders = mail_service.get_folders()
 
