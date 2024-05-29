@@ -3,6 +3,10 @@ import tkinter as tk
 from tkinter import ttk
 from customtkinter import *
 from service import *
+from CTkMessagebox import CTkMessagebox
+import configparser
+import sentence_embeddings as nn_model
+from sentence_embeddings import *
 
 text_color = "#d9edff"
 
@@ -24,14 +28,23 @@ class App(CTk):
 
         self.show_auth_frame(container)
 
+    def set_mail_service(self, mail_service):
+        self.mail_service = mail_service
+
     def show_auth_frame(self, container):
         frame = AuthFrame(parent=container, controller=self)
         frame.grid(row=0, column=0, sticky="nsew")
         frame.tkraise()
 
-    def show_settings_frame(self, container, mail_service):
-        frame = SettingsFrame(parent=container, controller=self,
-                              mail_service=mail_service)
+    def show_settings_frame(self, container):
+        if self.mail_service is not None:
+            frame = SettingsFrame(parent=container, controller=self,
+                                  mail_service=self.mail_service)
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.tkraise()
+
+    def show_test_frame(self, container):
+        frame = TestFrame(master=container, controller=self)
         frame.grid(row=0, column=0, sticky="nsew")
         frame.tkraise()
 
@@ -46,6 +59,8 @@ class AuthFrame(CTkFrame):
                                       font=("Arial", 16), text_color=text_color)
         services = ["cs.vsu.ru", "Mail.ru", "Gmail", "Inbox", "Outlook"]
         self.service_dropdown = CTkComboBox(master=self, values=services)
+        config = configparser.ConfigParser()  # создаём объекта парсера
+        config.read("config.ini")  # читаем конфиг
 
         login_label = CTkLabel(self, text="Введите логин:", text_color=text_color, font=('Arial', 16))
 
@@ -55,38 +70,48 @@ class AuthFrame(CTkFrame):
 
         self.password_entry = CTkEntry(self, show="*")
 
+        passw = config['DEFAULT']["password"]
+        if passw.strip() != '':
+            self.password_entry.insert(END, passw)
+        user = config['DEFAULT']["username"]
+        if user.strip() != '':
+            self.login_entry.insert(END, user)
+
         submit_button = CTkButton(master=self,
                                   text="Войти",
                                   command=lambda: self.submit(parent=parent, controller=controller),
                                   corner_radius=32,
                                   font=('Arial', 16))
 
-        welcome_label.pack(anchor="s", expand=True, pady=10, padx=30)
-        select_service_lbl.pack(anchor="s", expand=True, pady=10, padx=30)
-        self.service_dropdown.pack(anchor="s", expand=True, pady=10, padx=30)
-        login_label.pack(anchor="s", expand=True, pady=10, padx=30)
-        self.login_entry.pack(anchor="s", expand=True, pady=10, padx=30)
-        password_label.pack(anchor="s", expand=True, pady=10, padx=30)
-        self.password_entry.pack(anchor="s", expand=True, pady=10, padx=30)
-        submit_button.pack(anchor="n", expand=True, pady=20, padx=30)
+        welcome_label.pack(anchor="s", expand=True, pady=5, padx=30)
+        select_service_lbl.pack(anchor="s", expand=True, pady=5, padx=30)
+        self.service_dropdown.pack(anchor="s", expand=True, pady=5, padx=30)
+        login_label.pack(anchor="s", expand=True, pady=5, padx=30)
+        self.login_entry.pack(anchor="s", expand=True, pady=5, padx=30)
+        password_label.pack(anchor="s", expand=True, pady=5, padx=30)
+        self.password_entry.pack(anchor="s", expand=True, pady=5, padx=30)
+        submit_button.pack(anchor="n", expand=True, pady=10, padx=30)
+        self.checkbox = CTkCheckBox(master=self, text="Запомнить меня")
+        self.checkbox.pack(anchor="n", expand=True, pady=5, padx=30)
 
     def submit(self, parent, controller: App):
         service = self.service_dropdown.get()
-        # login = self.login_entry.get()
-        # password = self.password_entry.get()
-        login = "lazutkina@cs.vsu.ru"
-        password = "7PP4ZDXqnv"
-
+        login = self.login_entry.get()
+        password = self.password_entry.get()
+        config = configparser.ConfigParser()  # создаём объекта парсера
+        config.read("settings.ini")  # читаем конфиг
         mail_service = MailService(service, login, password)
-        # res = auth()
-        # print(res)
-
-        controller.show_settings_frame(parent, mail_service)
-
-        # settings_frame = SettingsFrame(controller, self, mail_service)
-        #
-        # settings_frame.pack_forget()
-        # settings_frame.tkraise()
+        res = mail_service.auth()
+        print(self.checkbox.get())
+        if res[0] != 'OK':
+            CTkMessagebox(title="Warning!", message=res[1],
+                          icon="warning", option_1="Retry")
+        else:
+            if self.checkbox.get() == 1:
+                config['DEFAULT']['password'] = password
+                config['DEFAULT']['username'] = login
+            controller.set_mail_service(mail_service)
+            controller.show_settings_frame(parent)
 
 
 class SettingsFrame(CTkFrame):
@@ -95,12 +120,6 @@ class SettingsFrame(CTkFrame):
 
         folders = mail_service.get_folders_list()
 
-        folders_data = {
-            "Folder1": {"messages": 10, "recipients": ["recipient1", "recipient2"]},
-            "Folder2": {"messages": 5, "recipients": ["recipient3", "recipient4"]},
-            "Folder3": {"messages": 8, "recipients": ["recipient5", "recipient6"]}
-        }
-
         CTkLabel(self, text="Папки", text_color=text_color, font=('Arial', 16)).grid(row=0, column=0)
 
         row = 1
@@ -108,27 +127,42 @@ class SettingsFrame(CTkFrame):
             label_folder = CTkLabel(self, text=f"{folder}", text_color=text_color,
                                     font=('Arial', 14), padx=4, pady=4)
             label_folder.grid(row=row, column=0, sticky="w", padx=4, pady=4)
-
-            # label_messages = CTkLabel(self, text=f"{data['messages']} писем",
-            #                           text_color=text_color, font=('Arial', 14),
-            #                           padx=4, pady=4)
-            # label_messages.grid(row=row, column=1, sticky="ew", padx=4, pady=4,)
-            #
-            # label_recipients = CTkLabel(self, text=f"Получатели: {', '.join(data['recipients'])}",
-            #                             text_color=text_color, font=('Arial', 14),
-            #                             padx=4, pady=4)
-            # label_recipients.grid(row=row, column=2, sticky="e", padx=4, pady=4,)
-
             row += 1
+        CTkButton(master=self,
+                  text="Тест",
+                  command=lambda: controller.show_test_frame(parent),
+                  corner_radius=32,
+                  font=('Arial', 16)).grid(row=0, column=1)
 
-            # label_folder = CTkLabel(self, text=f"Folder: {folder}")
-            # label_folder.pack()
-            #
-            # label_messages = CTkLabel(self, text=f"Messages: {data['messages']} писем")
-            # label_messages.pack()
-            #
-            # label_recipients = CTkLabel(self, text=f"Recipients: {', '.join(data['recipients'])}")
-            # label_recipients.pack()
+
+class TestFrame(CTkFrame):
+    def __init__(self, master: Any, controller, **kwargs):
+        super().__init__(master, **kwargs)
+        # CTkLabel(self, text="Тест", text_color=text_color, font=('Arial', 16)).grid(row=0)
+        t = CTkTextbox(self, corner_radius=10)
+        t.grid(row=0, padx=10, pady=10)
+        CTkButton(master=self,
+                  text="Определить категорию",
+                  command=lambda: self.test_category(t.get('0.0', 'end')),
+                  corner_radius=32,
+                  font=('Arial', 14)).grid(row=1)
+        self.lbl = CTkLabel(self, text="", text_color=text_color, font=('Arial', 12))
+        self.lbl.configure(justify='left')
+        self.lbl.grid(row=2)
+        CTkButton(master=self,
+                  text="Назад",
+                  command=lambda: controller.show_settings_frame(parent=master, ),
+                  corner_radius=32,
+                  font=('Arial', 14)).grid(row=1)
+
+    def test_category(self, text):
+        res = predict(text)
+        self.lbl.configure(text=res)
+
+
+class MailClassification(CTkFrame):
+    def __init__(self, master: Any, controller, **kwargs):
+        super().__init__(master, **kwargs)
 
 
 def start():
@@ -138,6 +172,3 @@ def start():
 
 app = App()
 app.mainloop()
-
-
-

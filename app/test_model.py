@@ -1,3 +1,5 @@
-import tensorflow as tf
+import sentence_embeddings as nn
+from sentence_embeddings import *
 
-loaded_model = tf.keras.saving.load_model("model.keras")
+res = predict("текст")
+print(res)

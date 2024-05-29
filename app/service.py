@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 import re
 import chardet
 from imap_tools import MailBox
+from imap_tools import MailboxLoginError
 
 
 def get_host(service):
@@ -43,17 +44,28 @@ class Mail:
         print(f"Subject={self.subject}, \nbody={self.body}")
 
 
-def auth(username, password, host):
-    mailbox = MailBox(host)
-    mailbox.login(username=username, password=password)
-    return mailbox
+# def auth(username, password, host):
+#     mailbox = MailBox(host)
+#     res = mailbox.login(username=username, password=password)
+#     return res, mailbox
 
 
 class MailService:
     def __init__(self, service, username, password):
-        self.service = service
-        host = get_host(service)
-        self.imap = auth(password=password, username=username, host=host)
+        self.host = get_host(service)
+        self.username = username
+        self.password = password
+        self.imap = None
+        # res, self.imap = auth(password=password, username=username, host=host)
+
+    def auth(self):
+        mailbox = MailBox(self.host)
+        try:
+            self.imap = mailbox.login(username=self.username, password=self.password)
+            res = self.imap.login_result
+        except MailboxLoginError as e:
+            res = e.command_result
+        return res
 
     def send_email(self, recipient, subject, body):
         pass
@@ -61,7 +73,7 @@ class MailService:
     def get_folders_list(self):
         folders = []
         for i in self.imap.folder.list('INBOX'):
-            k = i.decode().split(' "/" ')
+            k = i.name.split('/')
             folders.append(k[1])
         return folders
 
