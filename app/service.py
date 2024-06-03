@@ -2,28 +2,93 @@ import imaplib
 import email
 from email.header import decode_header
 import base64
+
+import dateparser
 from bs4 import BeautifulSoup
 import re
 import chardet
+from dateparser.search import search_dates
 from imap_tools import MailBox
+from imap_tools import MailMessage
 from imap_tools import MailboxLoginError
+from imap_tools import AND, OR, NOT, A, H, U
 
 
 def get_host(service):
-    dict = {"cs.vsu.ru": "info.vsu.ru",
-            "Mail.ru": "imap.mail.ru",
-            "Gmail": "imap.gmail.com",
-            "Outlook": "outlook.office365.com"}
-    return dict[service]
+    hosts = {"cs.vsu.ru": "info.vsu.ru"}
+    # "Mail.ru": "imap.mail.ru",
+    # "Gmail": "imap.gmail.com",
+    # "Outlook": "outlook.office365.com"
+    return hosts[service]
+
+
+def preprocess_date(msg: MailMessage):
+    headers = msg.headers
+    text = str(msg.text)
+    date = str(msg.date)
+    if 'x-original-date' in headers:
+        date = headers['x-original-date'][0]
+
+    if 'Sent:' in text:
+        date = re.search(r'Sent: (.*?)\n', text).group(1)
+
+    dp = dateparser.parse(date)
+    if dp is not None:
+        date = dp.strftime("%d.%m.%Y %H:%M:%S")
+    else:
+        date = search_dates(date)[0][1].strftime("%d.%m.%Y %H:%M:%S")
+    return date
+
+
+def preprocess_from(msg: MailMessage):
+    headers = msg.headers
+    text = msg.text
+    x_from = msg.from_
+    if 'x-original-from' in headers:
+        x_from = headers['x-original-from'][0]
+    elif 'From:' in text:
+        x_from = re.search(r'From: (.*?)\n', text).group(1)
+
+    if len(decode_header(x_from)) == 2:
+        encoding = decode_header(x_from)[0][1]
+        name = decode_header(x_from)[0][0]
+        if encoding is not None:
+            name = name.decode(encoding)
+
+        address = decode_header(x_from)[1][0].decode()
+        x_from = name + ' ' + address
+
+    return x_from
+
+
+def preprocess_subject(msg: MailMessage):
+    subject = msg.subject
+    if subject is not None and subject != '':
+        subject = subject.removeprefix("FWD:").removeprefix("Fwd:")
+    else:
+        subject = 'Нет темы'
+    return subject
+
+
+def preprocess_attachments(msg: MailMessage):
+    att_str = 'Нет вложений'
+    if msg.attachments is not None and len(msg.attachments) != 0:
+        att_str = ",".join(str(att.filename) for att in msg.attachments)
+    return att_str
 
 
 class Mail:
-    def __init__(self):
-        self.body: str = None
-        self.subject: str = None
-        self.sender: str = None
-        self.attachment_name: str = None
-        self.attachment_type: str = None
+    def __init__(self, msg: MailMessage):
+        self.msg = msg
+        self.uid = msg.uid
+        self.body: str = msg.text
+        self.subject: str = preprocess_subject(msg)
+        self.sender: str = preprocess_from(msg)
+        attachment_filename = preprocess_attachments(msg)
+        attachment_content_type = ",".join(str(att.content_type) for att in msg.attachments)
+        self.attachment_name: str = attachment_filename
+        self.attachment_type: str = attachment_content_type
+        self.date = preprocess_date(msg)
 
     def set_body(self, body):
         self.body = body
@@ -40,14 +105,14 @@ class Mail:
     def set_attachment_type(self, attachment_type):
         self.attachment_type = attachment_type
 
-    def print_mail(self):
-        print(f"Subject={self.subject}, \nbody={self.body}")
+    def to_str(self):
+        return f"Тема: {self.subject}\nВложения: {self.attachment_name}\n{self.body}"
 
 
-# def auth(username, password, host):
-#     mailbox = MailBox(host)
-#     res = mailbox.login(username=username, password=password)
-#     return res, mailbox
+def auth(username, password, host):
+    mailbox = MailBox(host)
+    res = mailbox.login(username=username, password=password)
+    return res, mailbox
 
 
 class MailService:
@@ -55,14 +120,14 @@ class MailService:
         self.host = get_host(service)
         self.username = username
         self.password = password
-        self.imap = None
+        self.mailbox = None
         # res, self.imap = auth(password=password, username=username, host=host)
 
     def auth(self):
         mailbox = MailBox(self.host)
         try:
-            self.imap = mailbox.login(username=self.username, password=self.password)
-            res = self.imap.login_result
+            self.mailbox = mailbox.login(username=self.username, password=self.password)
+            res = self.mailbox.login_result
         except MailboxLoginError as e:
             res = e.command_result
         return res
@@ -72,135 +137,43 @@ class MailService:
 
     def get_folders_list(self):
         folders = []
-        for i in self.imap.folder.list('INBOX'):
+        for i in self.mailbox.folder.list('INBOX'):
             k = i.name.split('/')
             folders.append(k[1])
         return folders
 
     def get_mail(self, mail_id):
-        self.imap.list()
-        self.imap.select("inbox")
-        result, data = self.imap.fetch(mail_id, "(RFC822)")
-        mail = Mail()
-        for response in data:
-            if isinstance(response, tuple):
-                # parse a bytes email into a message object
-                msg = email.message_from_bytes(response[1])
-                # decode the email subject
-                subject, encoding = decode_header(msg["Subject"])[0]
-                if isinstance(subject, bytes):
-                    # if it's a bytes, decode to str
-                    subject = subject.decode(encoding)
-                    mail.subject = subject
-                # decode email sender
-                sender, encoding = decode_header(msg.get("From"))[0]
-                if isinstance(sender, bytes):
-                    sender = sender.decode(encoding)
-                    mail.sender = sender
-                # print("Subject:", subject)
-                # print("From:", sender)
-                # if the email message is multipart
-                if msg.is_multipart():
-                    # iterate over email parts
-                    for part in msg.walk():
-                        # extract content type of email
-                        content_type = part.get_content_type()
-                        content_disposition = str(part.get("Content-Disposition"))
-                        try:
-                            # get the email body
-                            # body = part.get_payload(decode=True).decode()
-                            payload = part.get_payload(decode=True)
-                            if payload is None:
-                                continue
-                            body = payload.decode()
-
-                        except:
-                            pass
-                        if content_type == "text/plain" and "attachment" not in content_disposition:
-                            # print text/plain emails and skip attachments
-                            mail.body = body
-                        elif "attachment" in content_disposition:
-                            content_type = part.get_content_type()
-                            filename = decode_header(part.get_filename())[0][0].decode()
-                            if filename:
-                                mail.attachment_type = content_type
-                                mail.attachment_name = filename
-                                # print("Filename:", filename)
-                                # print("type:", content_type)
-                else:
-
-                    content_type = msg.get_content_type()
-                    # get the email body
-                    payload = part.get_payload(decode=True)
-                    if payload is None:
-                        continue
-                    body = payload.decode()
-                    if content_type == "text/plain":
-                        # print only text email parts
-                        mail.body = body
-        mail.print_mail()
+        msg = self.mailbox.fetch(AND(uid=mail_id), mark_seen=False)
+        return Mail(msg)
 
     def get_latest_mail(self):
-        self.imap.select("inbox")
-        result, data = self.imap.search(None, "ALL")
-        id_list = data[0].split()
-        latest_email_id = id_list[-1]
-        self.get_mail(latest_email_id)
+        mails = self.mailbox.fetch(limit=1, reverse=True, mark_seen=False)
+        msgs = []
+        for m in mails:
+            msgs.append(m)
+        msg = msgs[0]
+        return Mail(msg)
 
     def get_all_emails(self):
-        self.imap.select("inbox")
-        result, data = self.imap.search(None, "ALL")
-        data = data[0].split()
+        # columns = ['id', 'subject', 'from', 'text', 'date', 'attachment_filename', 'attachment_content_type']
+        mails_list = [Mail]
+        mails = self.mailbox.fetch(mark_seen=False)
+        for msg in mails:
+            mail = Mail(msg)
+            mails_list.append(mail)
+        return mails_list
 
-        for i in data:
+    def copy_to_folder(self, mail, folder_str):
+        f = 'INBOX/'+folder_str
+        exist = self.mailbox.folder.exists(f)
+        res = ''
+        if exist:
+            res = self.mailbox.copy(mail.uid, f)
+        else:
+            res_create = self.mailbox.folder.create(f)
+            print(res_create)
+            if 'OK' in res_create:
+                res = self.mailbox.copy(mail.uid, f)
+        return res
 
-            status, data = self.imap.fetch(i, '(RFC822)')
-            data = data[0][1]
-            enc = chardet.detect(data)
-            print(f"\n\n\nID сообщения: {i}\nКодировка: {enc}")
 
-            msg = email.message_from_bytes(data)
-            print("From: ", msg['From'])
-            print("Date: ", msg['Date'])
-            print("Subject: ", msg['Subject'])
-
-            if msg.is_multipart():
-                print("Multipart: Yes")
-                for part in msg.walk():
-                    payload = part.get_payload(decode=True)
-                    if payload is None:
-                        continue
-                    payload = payload.decode()
-                    # payload = part.get_payload(decode=True).decode('utf-8')
-
-            else:
-                print("Multipart: No")
-                payload = msg.get_payload(None).decode('utf-8')
-
-            print("Тип Payload: ", type(payload))
-            print("Payload: ", payload)
-        # self.imap.close()
-
-    def new_way_get_mails(self):
-
-        # get emails from INBOX folder
-        with MailBox(self.host).login(self.username, self.password, 'INBOX') as mailbox:
-            for msg in mailbox.fetch():
-                print(msg.uid)  # str or None: '123'
-                print(msg.subject)  # str: 'some subject 你 привет'
-                print(msg.from_)  # str: 'sender@ya.ru'
-                print(msg.to)  # tuple: ('iam@goo.ru', 'friend@ya.ru', )
-                print(msg.cc)  # tuple: ('cc@mail.ru', )
-                print(msg.bcc)  # tuple: ('bcc@mail.ru', )
-                print(msg.reply_to)  # tuple: ('reply_to@mail.ru', )
-                print(msg.date)  # datetime.datetime: 1900-1-1 for unparsed, may be naive or with tzinfo
-                print(msg.date_str)  # str: original date - 'Tue, 03 Jan 2017 22:26:59 +0500'
-                print(msg.text)  # str: 'Hello 你 Привет'
-                print(msg.html)  # str: '<b>Hello 你 Привет</b>'
-                print(msg.flags)  # tuple: ('SEEN', 'FLAGGED', 'ENCRYPTED')
-                print(msg.headers)  # dict: {'Received': ('from 1.m.ru', 'from 2.m.ru'), 'AntiVirus': ('Clean',)}
-
-                for att in msg.attachments:  # list: [Attachment]
-                    print(att.filename)  # str: 'cat.jpg'
-                    print(att.content_type)  # str: 'image/jpeg'
-                    # print(att.payload)  # bytes: b'\xff\xd8\xff\xe0\'

@@ -237,20 +237,24 @@ def predictCategory(text, model, navec, max_text_len):
 
 
 def predict(text):
-    model = load_pretrained_model("model/model-epoch=06-val_loss=1.35-val_accuracy=0.54.ckpt")
-    prob = predictCategory(text, model, navec, max_text_len)
-    categories = ["вопросы", "готово к публикации",
-                  "доработка", "другое", "отклонена",
-                  "подача статьи", "проверка статьи", "рецензирование"]
+    model = load_pretrained_model("model/model-epoch=09-val_loss=1.31-val_accuracy=0.64.ckpt")
+    categories = ["Вопросы", "Готово к публикации",
+                  "Доработка", "Другое", "Отклонена",
+                  "Подача статьи", "Проверка статьи", "Рецензирование"]
     result = {}
-    for i in range(len(categories)):
-        category = categories[i]
-        result[category] = prob[0][i]
-        result_sorted = sorted(result.items(), key=lambda x: x[1], reverse=True)
-
     res = ''
-    for s, p in result_sorted:
-        res = res + f'{s} : {p:.5f}\n'
+    if text is not None and text != '':
+        prob = predictCategory(text, model, navec, max_text_len)
+        for i in range(len(categories)):
+            category = categories[i]
+            result[category] = prob[0][i]
+
+        result_sorted = sorted(result.items(), key=lambda x: x[1], reverse=True)
+        for s, p in result_sorted:
+            res = res + f'{s} : {p:.2f}\n'
+    else:
+        res = "Warning"
+
     return res
 
 
