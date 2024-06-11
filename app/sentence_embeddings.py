@@ -237,7 +237,7 @@ def predictCategory(text, model, navec, max_text_len):
 
 
 def predict(text):
-    model = load_pretrained_model("model/model-epoch=09-val_loss=1.31-val_accuracy=0.64.ckpt")
+    model = load_pretrained_model("model/model-epoch=16-val_loss=0.53-val_accuracy=0.88.ckpt")
     categories = ["Вопросы", "Готово к публикации",
                   "Доработка", "Другое", "Отклонена",
                   "Подача статьи", "Проверка статьи", "Рецензирование"]

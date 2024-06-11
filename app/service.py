@@ -1,24 +1,16 @@
-import imaplib
-import email
-from email.header import decode_header
-import base64
-
-import dateparser
-from bs4 import BeautifulSoup
 import re
-import chardet
+from email.header import decode_header
+import dateparser
 from dateparser.search import search_dates
+from imap_tools import AND
 from imap_tools import MailBox
 from imap_tools import MailMessage
 from imap_tools import MailboxLoginError
-from imap_tools import AND, OR, NOT, A, H, U
+from transliterate import translit, get_available_language_codes
 
 
 def get_host(service):
-    hosts = {"cs.vsu.ru": "info.vsu.ru"}
-    # "Mail.ru": "imap.mail.ru",
-    # "Gmail": "imap.gmail.com",
-    # "Outlook": "outlook.office365.com"
+    hosts = {"cs.vsu.ru": "info.vsu.ru", "Mail.ru": "imap.mail.ru"}
     return hosts[service]
 
 
@@ -142,9 +134,27 @@ class MailService:
             folders.append(k[1])
         return folders
 
+    def get_raw_folders_list(self):
+        folders = []
+        for i in self.mailbox.folder.list('INBOX'):
+            k = i.name
+            folders.append(k)
+        return folders
+
+    def get_folder_size(self, folder):
+        folder = 'INBOX/'+folder
+        stat = self.mailbox.folder.status(folder)
+        # {'MESSAGES': 41, 'RECENT': 0, 'UIDNEXT': 11996, 'UIDVALIDITY': 1, 'UNSEEN': 5}
+        return stat['MESSAGES']
+
     def get_mail(self, mail_id):
         msg = self.mailbox.fetch(AND(uid=mail_id), mark_seen=False)
         return Mail(msg)
+
+    def flag_classified(self, uid, category):
+        # flag = translit(category, 'ru', reversed=True)
+        flag = '_'.join(category.split())
+        self.mailbox.flag(uid, [flag], True)
 
     def get_latest_mail(self):
         mails = self.mailbox.fetch(limit=1, reverse=True, mark_seen=False)
@@ -163,8 +173,22 @@ class MailService:
             mails_list.append(mail)
         return mails_list
 
-    def copy_to_folder(self, mail, folder_str):
-        f = 'INBOX/'+folder_str
+    def get_all_folder_emails(self, folder):
+        mails_list = [Mail]
+        self.mailbox.folder.set(folder)
+        mails = self.mailbox.fetch(mark_seen=False)
+        for msg in mails:
+            mail = Mail(msg)
+            mails_list.append(mail)
+        return mails_list
+
+    # def copy_mails_to_folder(self, mails, folder):
+    #     for m in mails:
+    #         self.copy_to_folder(m, folder)
+
+    def copy_to_folder(self, mail, folder, initial_folder="INBOX"):
+        f = initial_folder + '/' + folder
+
         exist = self.mailbox.folder.exists(f)
         res = ''
         if exist:
@@ -176,4 +200,5 @@ class MailService:
                 res = self.mailbox.copy(mail.uid, f)
         return res
 
-
+    def logout(self):
+        return self.mailbox.logout()
