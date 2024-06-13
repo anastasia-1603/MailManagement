@@ -1,20 +1,31 @@
 
 from transliterate import translit, get_available_language_codes
 
+categ_flag_dict = {"вопросы": "VOPROSY", "готово к публикации": "GOTOVO_K_PUBLIKATSII",
+              "доработка": "DORABOTKA", "другое": "DRUGOE",
+              "отклонена": "OTKLONENA", "подача статьи": "PODACHA_STAT'I",
+              "проверка статьи": "PROVERKA_STAT'I", "рецензирование": "RETSENZIROVANIE"}
 
-categories = ["Вопросы", "Готово к публикации",
-                  "Доработка", "Другое", "Отклонена",
-                  "Подача статьи", "Проверка статьи", "Рецензирование"]
-flags = []
-for c in categories:
-    flag = translit(c, 'ru', reversed=True)
-    flag = '_'.join(flag.split())
-    flags.append(flag.upper())
-    print(flag)
-    # tr = translit(flag, 'ru')
-    # print(tr)
-    # print()
-print(flags)
+
+def get_categ_by_flag(flag):
+    return list(categ_flag_dict.keys())[list(categ_flag_dict.values()).index(flag)]
+
+# print(get_categ_by_flag(';VOPROSY'))
+print('VOPROSY' in categ_flag_dict.values())
+#
+# categories = ["Вопросы", "Готово к публикации",
+#                   "Доработка", "Другое", "Отклонена",
+#                   "Подача статьи", "Проверка статьи", "Рецензирование"]
+# flags = []
+# for c in categories:
+#     flag = translit(c, 'ru', reversed=True)
+#     flag = '_'.join(flag.split())
+#     flags.append(flag.upper())
+#     print(flag)
+#     # tr = translit(flag, 'ru')
+#     # print(tr)
+#     # print()
+# print(flags)
 
 # Voprosy
 # Вопросы

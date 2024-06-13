@@ -3,6 +3,7 @@ from customtkinter import *
 from service import *
 from CTkMessagebox import CTkMessagebox
 import configparser
+from PIL import Image, ImageTk
 
 text_color = "#d9edff"
 bg_color = "#1d1e1e"
@@ -17,6 +18,17 @@ categories = ["Вопросы", "Готово к публикации",
 def set_mail_service(mailservice):
     global mail_service
     mail_service = mailservice
+
+
+def copy_to_folder(mail, folder):
+    if folder != 'Нет категории':
+        res = mail_service.copy_to_folder(mail, folder)
+        if 'OK' in res:
+            CTkMessagebox(width=200, height=100, title="Успешно", icon="check",
+                          message="Успешно скопировано", option_1="Ок")
+        else:
+            CTkMessagebox(width=200, height=100, title="Ошибка", message=res,
+                          icon="warning", option_1="Повторить")
 
 
 class App(CTk):
@@ -295,12 +307,14 @@ class LastMessageFrame(CTkFrame):
                    font=('Arial', 14))
          .grid(row=2, column=0, padx=10, pady=10, sticky='w'))
 
-        self.lbl = CTkLabel(self, text="", text_color=text_color, font=('Arial', 16))
-        self.lbl.configure(justify='left')
-        self.lbl.grid(row=2, column=1, padx=10, pady=10, sticky='w')
+        self.combobox = CTkComboBox(self, values=categories)
+
+        # self.lbl = CTkLabel(self, text="", text_color=text_color, font=('Arial', 16))
+        # self.lbl.configure(justify='left')
+        # self.lbl.grid(row=2, column=1, padx=10, pady=10, sticky='w')
         CTkButton(master=self,
                   text="Копировать в предложенную папку",
-                  command=lambda: self.copy_to_folder(mail),
+                  command=lambda: copy_to_folder(mail, self.combobox.get()),
                   corner_radius=32,
                   font=('Arial', 14)).grid(row=3, column=0, padx=10, pady=10,
                                            sticky='w', columnspan=2)
@@ -309,22 +323,14 @@ class LastMessageFrame(CTkFrame):
                   text="Назад",
                   command=lambda: controller.show_settings_frame(container=master),
                   corner_radius=32,
-                  font=('Arial', 10)).grid(row=5, column=0, padx=10, pady=10, sticky='w')
+                  font=('Arial', 14)).grid(row=5, column=0, padx=10, pady=10, sticky='w')
 
     def test_category(self, mail: Mail):
         categ = mail_service.classify_mail(mail)
-        self.lbl.configure(text=categ)
+        self.combobox.set(categ)
+        self.combobox.grid(row=2, column=1, padx=10, pady=10, sticky='ew')
+        # self.lbl.configure(text=categ)
         return categ
-
-    def copy_to_folder(self, mail):
-        folder_str = self.test_category(mail)
-        res = mail_service.copy_to_folder(mail, folder_str)
-        if res[0] != 'OK':
-            CTkMessagebox(title="Ошибка!", message=res[1],
-                          icon="warning", option_1="Повторить")
-        else:
-            CTkMessagebox(title="Успешно!", message=res[1],
-                          icon="check", option_1="Ок")
 
 
 class Statistic(CTkFrame):
@@ -361,7 +367,7 @@ class SortFolderPage(CTkFrame):
         super().__init__(master, **kwargs)
         (CTkLabel(self, text="Выберите папку", text_color=text_color, font=('Arial', 16))
          .grid(row=0, column=0, padx=10, pady=10))
-        self.mail_service = mail_service
+
         existing = mail_service.get_raw_folders_list()
         combobox = CTkComboBox(master=self, values=existing)
         combobox.grid(row=0, column=1, padx=10, pady=10)
@@ -378,33 +384,23 @@ class SortFolderPage(CTkFrame):
          .grid(row=2, column=0, padx=10, pady=10, sticky='w'))
 
     def update_size(self, choice):
-        size = self.mail_service.get_folder_size(choice)
+        size = mail_service.get_folder_size(choice)
         self.lbl.configure(text=f"Размер папки: {size} сообщений")
 
     def sort(self, folder):
-        mails = self.mail_service.get_all_folder_emails(folder)
+        mails = mail_service.get_all_folder_emails(folder)
         i = 0
         for m in mails:
             i = i + 1
             if i < 10:
                 c = predict(m.to_str())
-                res = self.mail_service.copy_to_folder(m, c, initial_folder=folder)
+                res = mail_service.copy_to_folder(m, c, initial_folder=folder)
                 if res[0] != 'OK':
                     CTkMessagebox(title="Ошибка!", message=res[1],
                                   icon="warning", option_1="Повторить")
                     return
         CTkMessagebox(title="Успешно!",
                       icon="check", option_1="Ок")
-
-    def copy_to_folder(self, mail):
-        folder_str = self.test_category(mail)
-        res = mail_service.copy_to_folder(mail, folder_str)
-        if res[0] != 'OK':
-            CTkMessagebox(title="Ошибка!", message=res[1],
-                          icon="warning", option_1="Повторить")
-        else:
-            CTkMessagebox(title="Успешно!", message=res[1],
-                          icon="check", option_1="Ок")
 
 
 class DaySortPage(CTkFrame):
@@ -429,6 +425,9 @@ class DaySortPage(CTkFrame):
          .grid(row=2, column=0, padx=10, pady=10, sticky='w'))
 
 
+default_count = 10
+
+
 class SortNewMails(CTkFrame):
     def __init__(self, master: Any, controller, **kwargs):
         super().__init__(master, **kwargs)
@@ -437,7 +436,7 @@ class SortNewMails(CTkFrame):
         self.grid_rowconfigure(2, weight=1)
         (CTkLabel(self, text="Проверить несколько последних писем: ", text_color=text_color, font=('Arial', 16))
          .grid(row=0, column=0, padx=10, pady=5))
-        self.count_entry = CTkEntry(self, placeholder_text='10')
+        self.count_entry = CTkEntry(self, placeholder_text=str(default_count))
         self.count_entry.insert(0, '10')
         self.count_entry.grid(row=0, column=1, padx=10, pady=5)
 
@@ -451,68 +450,84 @@ class SortNewMails(CTkFrame):
         self.scrollable_frame = CTkScrollableFrame(self)
         self.scrollable_frame.grid_columnconfigure(0, weight=1)
         self.scrollable_frame.grid_rowconfigure(index=0, weight=1)
+        self.mail_categ = {}
         self.update_count()
+        self.mails = mail_service.get_latest_mails(int(self.count_entry.get()))
+
         self.scrollable_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="nsew")
-        self.sort_checkbox = CTkCheckBox(self, text="Сортировать по папкам")
-        self.sort_checkbox.grid(row=3, column=0, padx=10, pady=10, sticky="w")
+        # self.sort_checkbox = CTkCheckBox(self, text="Сортировать по папкам")
+        # self.sort_checkbox.grid(row=3, column=0, padx=10, pady=10, sticky="w")
 
         accept_button = CTkButton(master=self,
-                                  text="Принять",
+                                  text="Сортировать по папкам",
                                   command=lambda: self.accept(),
                                   corner_radius=32,
                                   font=('Arial', 14))
-        accept_button.grid(row=4, column=1, padx=10, pady=10, sticky="e")
+        accept_button.grid(row=3, column=1, padx=10, pady=10, sticky="e")
 
         back_button = CTkButton(master=self,
                                 text="Назад",
                                 command=lambda: controller.show_settings_frame(container=master),
                                 corner_radius=32,
                                 font=('Arial', 14))
-        back_button.grid(row=4, column=0, padx=10, pady=10, sticky="w")
+        back_button.grid(row=3, column=0, padx=10, pady=10, sticky="w")
 
     def update_count(self):
         try:
             count = self.count_entry.get()
             if count == '':
-                count = 10
+                self.warning.configure(text='Введите корректное число')
+                count = default_count
             count = int(count)
             limit = int(mail_service.get_folder_size())
             if count <= 0:
                 self.warning.configure(text='Введите число больше 0')
-                self.warning.grid(row=1, column=1, sticky='n')
 
             elif count > limit:
                 self.warning.configure(text=f"Введите число меньше {limit}")
-                self.warning.grid(row=1, column=1, sticky='n')
+
             else:
                 self.scrollable_frame.destroy()
                 self.scrollable_frame = CTkScrollableFrame(self)
                 self.scrollable_frame.grid_columnconfigure(0, weight=1)
                 self.scrollable_frame.grid_rowconfigure(index=0, weight=1)
                 # self.scrollable_frame.grid_columnconfigure(1, weight=1)
-                mails : list[MailMessage] = mail_service.get_latest_mails(count) # todo
-
-                for i, m in zip(range(count), mails):
-
+                self.mails = mail_service.get_latest_mails(int(count))
+                self.mail_categ = {}
+                for i, m in zip(range(count), self.mails):
                     card_frame = CTkFrame(self.scrollable_frame)
                     card_frame.grid_columnconfigure(0, weight=1)
                     # card_frame.grid_columnconfigure(1, weight=1)
                     text_field = CTkTextbox(card_frame)
                     text_field.insert('0.0', m.to_str())
                     text_field.configure(state='disabled')
-                    combobox = CTkComboBox(card_frame, values=categories)
+                    combobox = CTkComboBox(
+                        card_frame,
+                        values=categories)
                     # pred = predict_category(m.to_str())[0]
-                    combobox.set(m.classify())
+                    # command=lambda uid=m.uid, category=combobox.get(): self.combobox_command(uid, category)
+                    combobox.configure(command=lambda uid=m.uid, categ=combobox.get(): self.combobox_command(uid, categ))
+                    category = m.classify()
+                    combobox.set(category)
+                    self.combobox_command(m.uid, category)
                     card_frame.grid(row=i, column=0, sticky="ew", pady=5)
                     text_field.grid(row=0, column=0, sticky="ew")
                     combobox.grid(row=0, column=1, sticky="e", padx=20)
                 self.scrollable_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="nsew")
         except ValueError:
             self.warning.configure(text='Введите корректное число')
+        self.warning.grid(row=1, column=1, sticky='n')
+
+    def combobox_command(self, uid, categ):
+        self.mail_categ[uid] = categ
 
     def accept(self):
-        pass
-
+        count = self.count_entry.get()
+        # print(count)
+        # print(len(self.mails))
+        # copy = self.sort_checkbox.get() == 1
+        for m in self.mails:
+            copy_to_folder(m, self.mail_categ[m.uid])
 
 
 app = App()

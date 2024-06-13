@@ -9,18 +9,28 @@ from imap_tools import MailboxLoginError
 from sentence_embeddings import *
 from transliterate import translit, get_available_language_codes
 
+categ_flag_dict = {"вопросы": "VOPROSY", "готово к публикации": "GOTOVO_K_PUBLIKATSII",
+                   "доработка": "DORABOTKA", "другое": "DRUGOE",
+                   "отклонена": "OTKLONENA", "подача статьи": "PODACHA_STAT'I",
+                   "проверка статьи": "PROVERKA_STAT'I", "рецензирование": "RETSENZIROVANIE"}
+
+
+def get_categ_by_flag(flag):
+    if flag in categ_flag_dict.values():
+        categ = list(categ_flag_dict.keys())[list(categ_flag_dict.values()).index(flag)]
+    else:
+        categ = 'Нет категории'  # todo фиг знает
+    return categ
+
+
+def get_flag_by_categ(category):
+    if category in categ_flag_dict.keys():
+        return categ_flag_dict[category.lower()]
+
 
 def get_host(service):
     hosts = {"cs.vsu.ru": "info.vsu.ru", "Mail.ru": "imap.mail.ru"}
     return hosts[service]
-
-
-def get_flag(category):
-    flags_dict = {"вопросы": "VOPROSY", "готово к публикации": "GOTOVO_K_PUBLIKATSII",
-                  "доработка": "DORABOTKA", "другое": "DRUGOE",
-                  "отклонена": "OTKLONENA", "подача статьи": "PODACHA_STAT'I",
-                  "проверка статьи": "PROVERKA_STAT'I", "рецензирование": "RETSENZIROVANIE"}
-    return flags_dict[category.lower()]
 
 
 def preprocess_date(msg: MailMessage):
@@ -103,7 +113,7 @@ class Mail:
         self.attachment_name: str = attachment_filename
         self.attachment_type: str = attachment_content_type
         self.date = preprocess_date(msg)
-        self.category = 'Нет категории'
+        # self.category = 'Нет категории'
 
     def set_body(self, body):
         self.body = body
@@ -120,6 +130,9 @@ class Mail:
     def set_attachment_type(self, attachment_type):
         self.attachment_type = attachment_type
 
+    # def set_category(self, category):
+    #     self.category = category
+
     def classify(self):
         """
         Возвращает категорию с большой буквы
@@ -127,8 +140,8 @@ class Mail:
         """
         text = self.to_str()
         pred = predict_category(text)
-        self.category = pred[0]
-        return self.category
+        # self.category = pred[0]
+        return pred[0]
 
     def to_str(self):
         return f"Тема: {self.subject}\nВложения: {self.attachment_name}\n{self.body}"
@@ -195,7 +208,7 @@ class MailService:
             self.mailbox.flag(uid, flags, False)
         # flag = translit(category, 'ru', reversed=True)
         # flag = '_'.join(flag.split()).upper()
-        flag = get_flag(category.lower())
+        flag = get_flag_by_categ(category)
         res = self.mailbox.flag(uid, ['CHECKED', flag], True)
         return res
 
@@ -238,7 +251,7 @@ class MailService:
         return mails_list
 
     def get_all_folder_emails(self, folder):
-        mails_list = [Mail]
+        mails_list = []
         self.mailbox.folder.set(folder)
         mails = self.mailbox.fetch(mark_seen=False)
         for msg in mails:
@@ -246,17 +259,27 @@ class MailService:
             mails_list.append(mail)
         return mails_list
 
+    def mail_is_already_in_folder(self, uid, folder):
+        mails = self.get_all_folder_emails(folder)
+        uids = [m.uid for m in mails]
+        return uid in uids
+
     # def copy_mails_to_folder(self, mails, folder):
     #     for m in mails:
     #         self.copy_to_folder(m, folder)
 
     def copy_to_folder(self, mail, folder, initial_folder="INBOX"):
-        f = initial_folder + '/' + folder
-
+        if folder != '':
+            f = initial_folder + '/' + folder
+        else:
+            f = initial_folder
         exist = self.mailbox.folder.exists(f)
         res = ''
         if exist:
-            res = self.mailbox.copy(mail.uid, f)
+            if not self.mail_is_already_in_folder(mail.uid, f):
+                res = self.mailbox.copy(mail.uid, f)
+            else:
+                res = 'Mail already in folder'
         else:
             res_create = self.mailbox.folder.create(f)
             print(res_create)
