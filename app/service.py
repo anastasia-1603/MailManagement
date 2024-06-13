@@ -6,12 +6,21 @@ from imap_tools import AND
 from imap_tools import MailBox
 from imap_tools import MailMessage
 from imap_tools import MailboxLoginError
+from sentence_embeddings import *
 from transliterate import translit, get_available_language_codes
 
 
 def get_host(service):
     hosts = {"cs.vsu.ru": "info.vsu.ru", "Mail.ru": "imap.mail.ru"}
     return hosts[service]
+
+
+def get_flag(category):
+    flags_dict = {"вопросы": "VOPROSY", "готово к публикации": "GOTOVO_K_PUBLIKATSII",
+                  "доработка": "DORABOTKA", "другое": "DRUGOE",
+                  "отклонена": "OTKLONENA", "подача статьи": "PODACHA_STAT'I",
+                  "проверка статьи": "PROVERKA_STAT'I", "рецензирование": "RETSENZIROVANIE"}
+    return flags_dict[category.lower()]
 
 
 def preprocess_date(msg: MailMessage):
@@ -69,6 +78,19 @@ def preprocess_attachments(msg: MailMessage):
     return att_str
 
 
+def predict_category(text):
+    """
+    Возвращает категорию с большой буквы и вероятность
+    @param text:
+    @return:
+    """
+    res = predict(text)
+    res = res.split(sep='\n')[0].split(sep=':')
+    categ = res[0].strip()
+    acc = res[1].strip()
+    return categ, acc
+
+
 class Mail:
     def __init__(self, msg: MailMessage):
         self.msg = msg
@@ -81,6 +103,7 @@ class Mail:
         self.attachment_name: str = attachment_filename
         self.attachment_type: str = attachment_content_type
         self.date = preprocess_date(msg)
+        self.category = 'Нет категории'
 
     def set_body(self, body):
         self.body = body
@@ -96,6 +119,16 @@ class Mail:
 
     def set_attachment_type(self, attachment_type):
         self.attachment_type = attachment_type
+
+    def classify(self):
+        """
+        Возвращает категорию с большой буквы
+        @return:
+        """
+        text = self.to_str()
+        pred = predict_category(text)
+        self.category = pred[0]
+        return self.category
 
     def to_str(self):
         return f"Тема: {self.subject}\nВложения: {self.attachment_name}\n{self.body}"
@@ -141,28 +174,59 @@ class MailService:
             folders.append(k)
         return folders
 
-    def get_folder_size(self, folder):
-        folder = 'INBOX/'+folder
+    def get_folder_size(self, folder='INBOX'):
+
+        # folder = 'INBOX/' + folder
         stat = self.mailbox.folder.status(folder)
         # {'MESSAGES': 41, 'RECENT': 0, 'UIDNEXT': 11996, 'UIDVALIDITY': 1, 'UNSEEN': 5}
         return stat['MESSAGES']
 
     def get_mail(self, mail_id):
-        msg = self.mailbox.fetch(AND(uid=mail_id), mark_seen=False)
+        msgs = self.mailbox.fetch(AND(uid=mail_id), mark_seen=False)
+        msg = [m for m in msgs][0]
         return Mail(msg)
 
     def flag_classified(self, uid, category):
+        mail = self.get_mail(uid)
+        if 'CHECKED' in mail.msg.flags:
+            flags = ['VOPROSY', 'GOTOVO_K_PUBLIKATSII', 'DORABOTKA',
+                     'DRUGOE', 'OTKLONENA', "PODACHA_STAT'I",
+                     "PROVERKA_STAT'I", 'RETSENZIROVANIE']
+            self.mailbox.flag(uid, flags, False)
         # flag = translit(category, 'ru', reversed=True)
-        flag = '_'.join(category.split())
-        self.mailbox.flag(uid, [flag], True)
+        # flag = '_'.join(flag.split()).upper()
+        flag = get_flag(category.lower())
+        res = self.mailbox.flag(uid, ['CHECKED', flag], True)
+        return res
+
+    # def classify_mail_by_uid(self, uid):
+    #     mail = self.get_mail(uid)
+    #     return self.classify_mail(mail)
+
+    def classify_mail(self, mail):
+        """
+        Возвращает категорию с большой буквы.
+        Присваивает сообщению флаг.
+        @param mail:
+        @return:
+        """
+        categ = mail.classify()
+        self.flag_classified(mail.uid, categ)
+        return categ
+
+    def flag_classified_mail(self, mail):
+        res = self.flag_classified(mail.uid, mail.category)
+        return res
 
     def get_latest_mail(self):
         mails = self.mailbox.fetch(limit=1, reverse=True, mark_seen=False)
-        msgs = []
-        for m in mails:
-            msgs.append(m)
-        msg = msgs[0]
+        msg = [m for m in mails][0]
         return Mail(msg)
+
+    def get_latest_mails(self, count):
+        mails = self.mailbox.fetch(limit=count, reverse=True, mark_seen=False)
+        msgs = [Mail(msg) for msg in mails]
+        return msgs
 
     def get_all_emails(self):
         # columns = ['id', 'subject', 'from', 'text', 'date', 'attachment_filename', 'attachment_content_type']

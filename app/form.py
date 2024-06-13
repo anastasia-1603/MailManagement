@@ -3,11 +3,20 @@ from customtkinter import *
 from service import *
 from CTkMessagebox import CTkMessagebox
 import configparser
-from sentence_embeddings import *
 
 text_color = "#d9edff"
 bg_color = "#1d1e1e"
 fg_color_red = "#854442"
+
+mail_service: MailService = None
+categories = ["Вопросы", "Готово к публикации",
+              "Доработка", "Другое", "Отклонена",
+              "Подача статьи", "Проверка статьи", "Рецензирование"]
+
+
+def set_mail_service(mailservice):
+    global mail_service
+    mail_service = mailservice
 
 
 class App(CTk):
@@ -18,7 +27,6 @@ class App(CTk):
         set_appearance_mode("dark")
         self.title("Классификация почты")
         self.configure(bg='lightblue')
-        self.mail_service: MailService = None
 
         container = CTkFrame(self)
         container.pack(side="top", fill="both", expand=True)
@@ -27,18 +35,14 @@ class App(CTk):
 
         self.show_auth_frame(container)
 
-    def set_mail_service(self, mail_service):
-        self.mail_service = mail_service
-
     def show_auth_frame(self, container):
         frame = AuthFrame(parent=container, controller=self)
         frame.grid(row=0, column=0, sticky="nsew")
         frame.tkraise()
 
     def show_settings_frame(self, container):
-        if self.mail_service is not None:
-            frame = SettingsFrame(parent=container, controller=self,
-                                  mail_service=self.mail_service)
+        if mail_service is not None:
+            frame = SettingsFrame(parent=container, controller=self)
             frame.grid(row=0, column=0, sticky="nsew")
             frame.tkraise()
 
@@ -48,23 +52,39 @@ class App(CTk):
         frame.tkraise()
 
     def show_last_msg_page(self, container):
-        frame = LastMessageFrame(master=container, controller=self, mail_service=self.mail_service)
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.tkraise()
+        if mail_service is not None:
+            frame = LastMessageFrame(master=container, controller=self)
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.tkraise()
 
     def show_sort_folder_page(self, container):
-        frame = SortFolderPage(master=container, controller=self, mail_service=self.mail_service)
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.tkraise()
+        if mail_service is not None:
+            frame = SortFolderPage(master=container, controller=self)
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.tkraise()
 
     def show_statistic_page(self, container):
-        frame = Statistic(master=container, controller=self, mail_service=self.mail_service)
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.tkraise()
+        if mail_service is not None:
+            frame = Statistic(master=container, controller=self)
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.tkraise()
+
+    def show_day_sort_page(self, container):
+        if mail_service is not None:
+            frame = DaySortPage(master=container, controller=self)
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.tkraise()
+
+    def show_sort_new_mails_page(self, container):
+        if mail_service is not None:
+            frame = SortNewMails(master=container, controller=self)
+            frame.grid(row=0, column=0, sticky="nsew")
+            frame.tkraise()
 
     def logout(self, container):
-        self.show_auth_frame(container)
-        self.mail_service.logout()
+        if mail_service is not None:
+            self.show_auth_frame(container)
+            mail_service.logout()
 
 
 class AuthFrame(CTkFrame):
@@ -162,7 +182,7 @@ class AuthFrame(CTkFrame):
 
         config = configparser.ConfigParser()  # создаём объекта парсера
         config.read("settings.ini")  # читаем конфиг
-        mail_service = MailService(service, login, password)
+        set_mail_service(MailService(service, login, password))
         res = mail_service.auth()
         if res[0] != 'OK':
             CTkMessagebox(title="Не удалось войти", message=res[1],
@@ -173,12 +193,12 @@ class AuthFrame(CTkFrame):
 
             # with open('config.ini', 'w') as configfile:
             #     config.write(configfile)
-            controller.set_mail_service(mail_service)
+            # controller.set_mail_service(mail_service)
             controller.show_settings_frame(parent)
 
 
 class SettingsFrame(CTkFrame):
-    def __init__(self, parent: Any, controller, mail_service: MailService, **kwargs):
+    def __init__(self, parent: Any, controller, **kwargs):
         super().__init__(parent, **kwargs)
 
         self.grid_columnconfigure(0, weight=1)
@@ -196,21 +216,21 @@ class SettingsFrame(CTkFrame):
 
         CTkButton(master=self,
                   text="Классифицировать письма за сегодня",
-                  command=lambda: controller.show_sort_page(parent),
+                  command=lambda: controller.show_day_sort_page(parent),
                   corner_radius=32,
                   font=('Arial', 16)).grid(row=2, column=0, padx=10, pady=10, sticky='w')
 
         CTkButton(master=self,
-                  text="Классифицировать новые письма",
-                  command=lambda: controller.show_sort_page(parent),
+                  text="Классифицировать несколько писем",
+                  command=lambda: controller.show_sort_new_mails_page(parent),
                   corner_radius=32,
                   font=('Arial', 16)).grid(row=3, column=0, padx=10, pady=10, sticky='w')
-
-        CTkButton(master=self,
-                  text="Классифицировать письма в папке",
-                  command=lambda: controller.show_sort_folder_page(parent),
-                  corner_radius=32,
-                  font=('Arial', 16)).grid(row=4, column=0, padx=10, pady=10, sticky='w')
+        #
+        # CTkButton(master=self,
+        #           text="Классифицировать письма в папке",
+        #           command=lambda: controller.show_sort_folder_page(parent),
+        #           corner_radius=32,
+        #           font=('Arial', 16)).grid(row=4, column=0, padx=10, pady=10, sticky='w')
 
         CTkButton(master=self,
                   text="Классифицировать тестовое сообщение",
@@ -250,13 +270,13 @@ class TestFrame(CTkFrame):
                   font=('Arial', 10)).grid(row=3, sticky='s')
 
     def test_category(self, text):
-        res = predict(text)
-        res = res.split(sep='\n')[0]
-        self.lbl.configure(text=res)
+        res = predict_category(text)
+        lbl_text = f'{res[0]} : {res[1]}'
+        self.lbl.configure(text=lbl_text)
 
 
 class LastMessageFrame(CTkFrame):
-    def __init__(self, master: Any, controller, mail_service: MailService, **kwargs):
+    def __init__(self, master: Any, controller, **kwargs):
         super().__init__(master, **kwargs)
 
         self.grid_columnconfigure(0, weight=1)
@@ -280,7 +300,7 @@ class LastMessageFrame(CTkFrame):
         self.lbl.grid(row=2, column=1, padx=10, pady=10, sticky='w')
         CTkButton(master=self,
                   text="Копировать в предложенную папку",
-                  command=lambda: self.copy_to_folder(mail_service, mail),
+                  command=lambda: self.copy_to_folder(mail),
                   corner_radius=32,
                   font=('Arial', 14)).grid(row=3, column=0, padx=10, pady=10,
                                            sticky='w', columnspan=2)
@@ -292,14 +312,11 @@ class LastMessageFrame(CTkFrame):
                   font=('Arial', 10)).grid(row=5, column=0, padx=10, pady=10, sticky='w')
 
     def test_category(self, mail: Mail):
-        text = mail.to_str()
-        res = predict(text)
-        res = res.split(sep='\n')[0]
-        categ = res.split(sep=':')[0].strip()
+        categ = mail_service.classify_mail(mail)
         self.lbl.configure(text=categ)
         return categ
 
-    def copy_to_folder(self, mail_service, mail):
+    def copy_to_folder(self, mail):
         folder_str = self.test_category(mail)
         res = mail_service.copy_to_folder(mail, folder_str)
         if res[0] != 'OK':
@@ -311,10 +328,11 @@ class LastMessageFrame(CTkFrame):
 
 
 class Statistic(CTkFrame):
-    def __init__(self, master: Any, controller, mail_service: MailService, **kwargs):
+    def __init__(self, master: Any, controller, **kwargs):
         super().__init__(master, **kwargs)
         CTkLabel(self, text="Статистика", text_color=text_color, font=('Arial', 16)).grid(row=0, columnspan=2)
-        CTkLabel(self, text="Категоризированных писем: 15", text_color=text_color, font=('Arial', 16)).grid(row=1, columnspan=2)
+        CTkLabel(self, text="Категоризированных писем: 15", text_color=text_color, font=('Arial', 16)).grid(row=1,
+                                                                                                            columnspan=2)
         CTkLabel(self, text="Не распределено: 10", text_color=text_color, font=('Arial', 16)).grid(row=2, columnspan=2)
         folders = mail_service.get_folders_list()
         folders_names = ["Вопросы", "Готово к публикации",
@@ -339,7 +357,7 @@ class Statistic(CTkFrame):
 
 
 class SortFolderPage(CTkFrame):
-    def __init__(self, master: Any, controller, mail_service: MailService, **kwargs):
+    def __init__(self, master: Any, controller, **kwargs):
         super().__init__(master, **kwargs)
         (CTkLabel(self, text="Выберите папку", text_color=text_color, font=('Arial', 16))
          .grid(row=0, column=0, padx=10, pady=10))
@@ -368,7 +386,7 @@ class SortFolderPage(CTkFrame):
         i = 0
         for m in mails:
             i = i + 1
-            if i<10:
+            if i < 10:
                 c = predict(m.to_str())
                 res = self.mail_service.copy_to_folder(m, c, initial_folder=folder)
                 if res[0] != 'OK':
@@ -378,7 +396,7 @@ class SortFolderPage(CTkFrame):
         CTkMessagebox(title="Успешно!",
                       icon="check", option_1="Ок")
 
-    def copy_to_folder(self, mail_service, mail):
+    def copy_to_folder(self, mail):
         folder_str = self.test_category(mail)
         res = mail_service.copy_to_folder(mail, folder_str)
         if res[0] != 'OK':
@@ -389,12 +407,12 @@ class SortFolderPage(CTkFrame):
                           icon="check", option_1="Ок")
 
 
-class SortNewMails(CTkFrame):
-    def __init__(self, master: Any, controller, mail_service: MailService, **kwargs):
+class DaySortPage(CTkFrame):
+    def __init__(self, master: Any, controller, **kwargs):
         super().__init__(master, **kwargs)
-        (CTkLabel(self, text="Новые письма (непрочитанные): ", text_color=text_color, font=('Arial', 16))
+        (CTkLabel(self, text="Письма за сегодня: ", text_color=text_color, font=('Arial', 16))
          .grid(row=0, column=0, padx=10, pady=10))
-        self.mail_service = mail_service
+
         existing = mail_service.get_raw_folders_list()
         combobox = CTkComboBox(master=self, values=existing)
         combobox.grid(row=0, column=1, padx=10, pady=10)
@@ -409,6 +427,92 @@ class SortNewMails(CTkFrame):
                    corner_radius=32,
                    font=('Arial', 14))
          .grid(row=2, column=0, padx=10, pady=10, sticky='w'))
+
+
+class SortNewMails(CTkFrame):
+    def __init__(self, master: Any, controller, **kwargs):
+        super().__init__(master, **kwargs)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
+        (CTkLabel(self, text="Проверить несколько последних писем: ", text_color=text_color, font=('Arial', 16))
+         .grid(row=0, column=0, padx=10, pady=5))
+        self.count_entry = CTkEntry(self, placeholder_text='10')
+        self.count_entry.insert(0, '10')
+        self.count_entry.grid(row=0, column=1, padx=10, pady=5)
+
+        CTkButton(master=self,
+                  text="Обновить",
+                  command=self.update_count,
+                  corner_radius=32,
+                  font=('Arial', 14)).grid(row=1, column=0, sticky='w', padx=10, pady=5)
+        self.warning = CTkLabel(self, text="",
+                                text_color=fg_color_red, font=('Arial', 12))
+        self.scrollable_frame = CTkScrollableFrame(self)
+        self.scrollable_frame.grid_columnconfigure(0, weight=1)
+        self.scrollable_frame.grid_rowconfigure(index=0, weight=1)
+        self.update_count()
+        self.scrollable_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="nsew")
+        self.sort_checkbox = CTkCheckBox(self, text="Сортировать по папкам")
+        self.sort_checkbox.grid(row=3, column=0, padx=10, pady=10, sticky="w")
+
+        accept_button = CTkButton(master=self,
+                                  text="Принять",
+                                  command=lambda: self.accept(),
+                                  corner_radius=32,
+                                  font=('Arial', 14))
+        accept_button.grid(row=4, column=1, padx=10, pady=10, sticky="e")
+
+        back_button = CTkButton(master=self,
+                                text="Назад",
+                                command=lambda: controller.show_settings_frame(container=master),
+                                corner_radius=32,
+                                font=('Arial', 14))
+        back_button.grid(row=4, column=0, padx=10, pady=10, sticky="w")
+
+    def update_count(self):
+        try:
+            count = self.count_entry.get()
+            if count == '':
+                count = 10
+            count = int(count)
+            limit = int(mail_service.get_folder_size())
+            if count <= 0:
+                self.warning.configure(text='Введите число больше 0')
+                self.warning.grid(row=1, column=1, sticky='n')
+
+            elif count > limit:
+                self.warning.configure(text=f"Введите число меньше {limit}")
+                self.warning.grid(row=1, column=1, sticky='n')
+            else:
+                self.scrollable_frame.destroy()
+                self.scrollable_frame = CTkScrollableFrame(self)
+                self.scrollable_frame.grid_columnconfigure(0, weight=1)
+                self.scrollable_frame.grid_rowconfigure(index=0, weight=1)
+                # self.scrollable_frame.grid_columnconfigure(1, weight=1)
+                mails : list[MailMessage] = mail_service.get_latest_mails(count) # todo
+
+                for i, m in zip(range(count), mails):
+
+                    card_frame = CTkFrame(self.scrollable_frame)
+                    card_frame.grid_columnconfigure(0, weight=1)
+                    # card_frame.grid_columnconfigure(1, weight=1)
+                    text_field = CTkTextbox(card_frame)
+                    text_field.insert('0.0', m.to_str())
+                    text_field.configure(state='disabled')
+                    combobox = CTkComboBox(card_frame, values=categories)
+                    # pred = predict_category(m.to_str())[0]
+                    combobox.set(m.classify())
+                    card_frame.grid(row=i, column=0, sticky="ew", pady=5)
+                    text_field.grid(row=0, column=0, sticky="ew")
+                    combobox.grid(row=0, column=1, sticky="e", padx=20)
+                self.scrollable_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="nsew")
+        except ValueError:
+            self.warning.configure(text='Введите корректное число')
+
+    def accept(self):
+        pass
+
 
 
 app = App()

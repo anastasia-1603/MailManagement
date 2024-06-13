@@ -25,6 +25,7 @@ class CustomConv1D(nn.Module):
         super().__init__()
         self.conv1d = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=1,
                                 padding=kernel_size // 2, dilation=dilation)
+
         self.activation = nn.LeakyReLU(0.2)
 
     def forward(self, x):
@@ -38,6 +39,8 @@ class TokenCNN(nn.Module):
                  in_embed_size: int,
                  context_embed_size: int):
         super().__init__()
+        self.conv_1_0 = CustomConv1D(in_channels=in_embed_size, out_channels=context_embed_size, kernel_size=11,
+                                     dilation=1)
         self.conv_1_1 = CustomConv1D(in_channels=in_embed_size, out_channels=context_embed_size, kernel_size=7,
                                      dilation=1)
         self.conv_1_2 = CustomConv1D(in_channels=context_embed_size, out_channels=context_embed_size, kernel_size=3,
@@ -49,6 +52,8 @@ class TokenCNN(nn.Module):
         self.conv_2_2 = CustomConv1D(in_channels=context_embed_size, out_channels=context_embed_size, kernel_size=3,
                                      dilation=1)
         self.pooling_2 = nn.MaxPool1d(kernel_size=3, stride=3)
+
+        self.dropout1 = nn.Dropout1d(p=0.4)
 
         self.conv_3_1 = CustomConv1D(in_channels=context_embed_size, out_channels=context_embed_size, kernel_size=7,
                                      dilation=1)
@@ -63,13 +68,15 @@ class TokenCNN(nn.Module):
         self.pooling_4 = nn.MaxPool1d(kernel_size=3, stride=3)
 
     def forward(self, x):
-        x = self.conv_1_1(x)
+        x = self.conv_1_0(x)
         x = x + self.conv_1_2(x)
         x = self.pooling_1(x)
 
         x = self.conv_2_1(x)
         x = x + self.conv_2_2(x)
         x = self.pooling_2(x)
+
+        x = self.dropout1(x)
 
         x = self.conv_3_1(x)
         x = x + self.conv_3_2(x)
@@ -78,6 +85,16 @@ class TokenCNN(nn.Module):
         x = self.conv_4_1(x)
         x = x + self.conv_4_2(x)
         x = self.pooling_4(x)
+
+        # x = self.dropout2(x)
+        #
+        # x = self.conv_5_1(x)
+        # x = x + self.conv_5_2(x)
+        # x = self.pooling_5(x)
+        #
+        # x = self.conv_6_1(x)
+        # x = x + self.conv_6_2(x)
+        # x = self.pooling_6(x)
         return x
 
 
@@ -101,22 +118,30 @@ class Network(nn.Module):
                  num_classes,
                  max_text_len,
                  token_embedding_size=256,
-                 classifier_dropout=0.5):
+                 classifier_dropout=0.3):
         super().__init__()
         self.embeddings = NavecEmbedding(navec)
-        self.token_cnn = TokenCNN(in_embed_size=300, context_embed_size=token_embedding_size)
+        self.token_cnn = TokenCNN(in_embed_size=token_embedding_size, context_embed_size=token_embedding_size)
+        # self.token_cnn2 = TokenCNN(in_embed_size=token_embedding_size, context_embed_size=token_embedding_size)
+        # self.token_rnn = TokenCNNRNN(max_text_len=max_text_len, in_embed_size=300, context_embed_size=token_embedding_size, num_layers=1) # todo
+
         self.global_pooling_context = nn.AdaptiveMaxPool1d(1)
         self.classification_head = ClassificationHead(in_features=token_embedding_size, out_features=num_classes,
                                                       dropout=classifier_dropout)
 
     def forward(self, tokens):
-        batch_size, max_text_len = tokens.shape  # BatchSize x MaxTextLen
+        # BatchSize x MaxTextLen
+        batch_size, max_text_len = tokens.shape
 
-        word_embeddings = self.embeddings(tokens)  # BatchSize x MaxTokenLen x EmbSize
-        word_embeddings = word_embeddings.permute(0, 2, 1)  # BatchSize x EmbSize x MaxTextLen
-
-        context_features = self.token_cnn(word_embeddings)  # BatchSize x EmbSize x MaxTextLen
-        text_features = self.global_pooling_context(context_features).squeeze(-1)  # BatchSize x EmbSize
+        # BatchSize x MaxTokenLen x EmbSize
+        word_embeddings = self.embeddings(tokens)
+        # BatchSize x EmbSize x MaxTextLen
+        word_embeddings = word_embeddings.permute(0, 2, 1)
+        # BatchSize x EmbSize x MaxTextLen
+        context_features = self.token_cnn(word_embeddings)  # todo
+        # context_features = self.token_cnn2(context_features)
+        text_features = self.global_pooling_context(context_features).squeeze(-1)
+        # BatchSize x EmbSize
         logits = self.classification_head(text_features)  # BatchSize x num_classes
         return logits
 
@@ -145,11 +170,11 @@ class DataModule(pl.LightningDataModule):
 
 class ModelCompilation(pl.LightningModule):
     def __init__(self,
-                 model: torch.nn.Module,
-                 metrics: dict,
+                 model:torch.nn.Module,
+                 metrics:dict,
                  loss_function,
-                 optimizer: torch.optim,
-                 learning_rate: float):
+                 optimizer:torch.optim,
+                 learning_rate:float):
         super().__init__()
         self.model = model
         self.metrics = metrics
@@ -163,8 +188,7 @@ class ModelCompilation(pl.LightningModule):
         return pred
 
     def configure_optimizers(self):
-        train_optimizer = self.optimizer(self.parameters(), lr=self.learning_rate, weight_decay=0.05, betas=(0.9, 0.98),
-                                         eps=1.0e-9)
+        train_optimizer = self.optimizer(self.parameters(), lr=self.learning_rate, weight_decay=0.05, betas = (0.9, 0.98), eps = 1.0e-9)
         train_scheduler = {
             "scheduler": ReduceLROnPlateau(optimizer=train_optimizer, mode="min", factor=0.1, patience=1, min_lr=5e-6),
             "interval": "epoch",
@@ -194,8 +218,7 @@ class ModelCompilation(pl.LightningModule):
         else:
             on_step = True
 
-        [self.log(stage + '_' + metric_name, metric(pred, y).to(device), on_step=on_step, on_epoch=True, prog_bar=True,
-                  logger=True) for metric_name, metric in self.metrics.items()]
+        [self.log(stage + '_' + metric_name, metric(pred, y).to(device), on_step=on_step, on_epoch=True, prog_bar=True, logger=True) for metric_name, metric in self.metrics.items()]
         self.log(stage + '_' + 'loss', loss, on_step=on_step, on_epoch=True, prog_bar=True, logger=True)
         return loss, pred, y
 
@@ -237,6 +260,11 @@ def predictCategory(text, model, navec, max_text_len):
 
 
 def predict(text):
+    """
+    Возвращает категорию с большой буквы и вероятность
+    @param text:
+    @return:
+    """
     model = load_pretrained_model("model/model-epoch=16-val_loss=0.53-val_accuracy=0.88.ckpt")
     categories = ["Вопросы", "Готово к публикации",
                   "Доработка", "Другое", "Отклонена",
@@ -253,9 +281,7 @@ def predict(text):
         for s, p in result_sorted:
             res = res + f'{s} : {p:.2f}\n'
     else:
-        res = "Warning"
+        res = "Warning!"
 
     return res
 
-
-# print(predict("текст"))
