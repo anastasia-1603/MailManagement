@@ -39,8 +39,10 @@ class TokenCNN(nn.Module):
                  in_embed_size: int,
                  context_embed_size: int):
         super().__init__()
-        self.conv_1_0 = CustomConv1D(in_channels=in_embed_size, out_channels=context_embed_size, kernel_size=11,
-                                     dilation=1)
+        # Для версии 0.88 раскомментировать
+        self.conv_1_0 = CustomConv1D(in_channels=in_embed_size,
+                                     out_channels=context_embed_size, kernel_size=11, dilation=1)
+
         self.conv_1_1 = CustomConv1D(in_channels=in_embed_size, out_channels=context_embed_size, kernel_size=7,
                                      dilation=1)
         self.conv_1_2 = CustomConv1D(in_channels=context_embed_size, out_channels=context_embed_size, kernel_size=3,
@@ -69,6 +71,7 @@ class TokenCNN(nn.Module):
 
     def forward(self, x):
         x = self.conv_1_0(x)
+        # x = self.conv_1_1(x)
         x = x + self.conv_1_2(x)
         x = self.pooling_1(x)
 
@@ -122,8 +125,6 @@ class Network(nn.Module):
         super().__init__()
         self.embeddings = NavecEmbedding(navec)
         self.token_cnn = TokenCNN(in_embed_size=token_embedding_size, context_embed_size=token_embedding_size)
-        # self.token_cnn2 = TokenCNN(in_embed_size=token_embedding_size, context_embed_size=token_embedding_size)
-        # self.token_rnn = TokenCNNRNN(max_text_len=max_text_len, in_embed_size=300, context_embed_size=token_embedding_size, num_layers=1) # todo
 
         self.global_pooling_context = nn.AdaptiveMaxPool1d(1)
         self.classification_head = ClassificationHead(in_features=token_embedding_size, out_features=num_classes,
@@ -138,7 +139,7 @@ class Network(nn.Module):
         # BatchSize x EmbSize x MaxTextLen
         word_embeddings = word_embeddings.permute(0, 2, 1)
         # BatchSize x EmbSize x MaxTextLen
-        context_features = self.token_cnn(word_embeddings)  # todo
+        context_features = self.token_cnn(word_embeddings)
         # context_features = self.token_cnn2(context_features)
         text_features = self.global_pooling_context(context_features).squeeze(-1)
         # BatchSize x EmbSize
@@ -170,11 +171,11 @@ class DataModule(pl.LightningDataModule):
 
 class ModelCompilation(pl.LightningModule):
     def __init__(self,
-                 model:torch.nn.Module,
-                 metrics:dict,
+                 model: torch.nn.Module,
+                 metrics: dict,
                  loss_function,
-                 optimizer:torch.optim,
-                 learning_rate:float):
+                 optimizer: torch.optim,
+                 learning_rate: float):
         super().__init__()
         self.model = model
         self.metrics = metrics
@@ -188,7 +189,8 @@ class ModelCompilation(pl.LightningModule):
         return pred
 
     def configure_optimizers(self):
-        train_optimizer = self.optimizer(self.parameters(), lr=self.learning_rate, weight_decay=0.05, betas = (0.9, 0.98), eps = 1.0e-9)
+        train_optimizer = self.optimizer(self.parameters(), lr=self.learning_rate, weight_decay=0.05, betas=(0.9, 0.98),
+                                         eps=1.0e-9)
         train_scheduler = {
             "scheduler": ReduceLROnPlateau(optimizer=train_optimizer, mode="min", factor=0.1, patience=1, min_lr=5e-6),
             "interval": "epoch",
@@ -218,7 +220,8 @@ class ModelCompilation(pl.LightningModule):
         else:
             on_step = True
 
-        [self.log(stage + '_' + metric_name, metric(pred, y).to(device), on_step=on_step, on_epoch=True, prog_bar=True, logger=True) for metric_name, metric in self.metrics.items()]
+        [self.log(stage + '_' + metric_name, metric(pred, y).to(device), on_step=on_step, on_epoch=True, prog_bar=True,
+                  logger=True) for metric_name, metric in self.metrics.items()]
         self.log(stage + '_' + 'loss', loss, on_step=on_step, on_epoch=True, prog_bar=True, logger=True)
         return loss, pred, y
 
@@ -265,7 +268,9 @@ def predict(text):
     @param text:
     @return:
     """
+    # model-epoch=16-val_loss=0.53-val_accuracy=0.88.ckpt
     model = load_pretrained_model("model/model-epoch=16-val_loss=0.53-val_accuracy=0.88.ckpt")
+    # model = load_pretrained_model("model/model-epoch=20-val_loss=0.28-val_accuracy=0.93.ckpt")
     categories = ["Вопросы", "Готово к публикации",
                   "Доработка", "Другое", "Отклонена",
                   "Подача статьи", "Проверка статьи", "Рецензирование"]
@@ -284,4 +289,3 @@ def predict(text):
         res = "Warning!"
 
     return res
-

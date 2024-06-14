@@ -2,17 +2,23 @@ import re
 from email.header import decode_header
 import dateparser
 from dateparser.search import search_dates
-from imap_tools import AND
+from imap_tools import AND, A
 from imap_tools import MailBox
 from imap_tools import MailMessage
 from imap_tools import MailboxLoginError
 from sentence_embeddings import *
+import time, socket, imaplib, traceback
+from imap_tools import MailboxLoginError, MailboxLogoutError
+import logging
 from transliterate import translit, get_available_language_codes
 
 categ_flag_dict = {"вопросы": "VOPROSY", "готово к публикации": "GOTOVO_K_PUBLIKATSII",
                    "доработка": "DORABOTKA", "другое": "DRUGOE",
                    "отклонена": "OTKLONENA", "подача статьи": "PODACHA_STAT'I",
                    "проверка статьи": "PROVERKA_STAT'I", "рецензирование": "RETSENZIROVANIE"}
+
+logging.basicConfig(level=logging.INFO, filename="py_log.log", filemode="a",
+                    format="%(asctime)s %(levelname)s %(message)s")
 
 
 def get_categ_by_flag(flag):
@@ -101,6 +107,10 @@ def predict_category(text):
     return categ, acc
 
 
+def write_log(msg):
+    logging.info(msg)
+
+
 class Mail:
     def __init__(self, msg: MailMessage):
         self.msg = msg
@@ -140,6 +150,7 @@ class Mail:
         """
         text = self.to_str()
         pred = predict_category(text)
+
         # self.category = pred[0]
         return pred[0]
 
@@ -154,11 +165,14 @@ def auth(username, password, host):
 
 
 class MailService:
-    def __init__(self, service, username, password):
+    def __init__(self, service, username, password, logger=None):
         self.host = get_host(service)
         self.username = username
         self.password = password
         self.mailbox = None
+        self.done = False
+        self.logger = logger
+        self.isStopped = False
         # res, self.imap = auth(password=password, username=username, host=host)
 
     def auth(self):
@@ -166,12 +180,13 @@ class MailService:
         try:
             self.mailbox = mailbox.login(username=self.username, password=self.password)
             res = self.mailbox.login_result
+            logging.info(f"New connection {time.asctime()}. Login result {res}")
+            self.logger.log(f"New connection {time.asctime()}. Login result {res}")
         except MailboxLoginError as e:
             res = e.command_result
+            logging.error(f"Try connection {time.asctime()}. Login result {res}")
+            self.logger.log(f"Try connection {time.asctime()}. Login result {res}")
         return res
-
-    def send_email(self, recipient, subject, body):
-        pass
 
     def get_folders_list(self):
         folders = []
@@ -210,13 +225,15 @@ class MailService:
         # flag = '_'.join(flag.split()).upper()
         flag = get_flag_by_categ(category)
         res = self.mailbox.flag(uid, ['CHECKED', flag], True)
+        logging.info(f"Try to flag mail {uid} with flag {flag}. Result {res}")
+        self.logger.log(f"Try to flag mail {uid} with flag {flag}. Result {res}")
         return res
 
     # def classify_mail_by_uid(self, uid):
     #     mail = self.get_mail(uid)
     #     return self.classify_mail(mail)
 
-    def classify_mail(self, mail):
+    def classify_and_flag_mail(self, mail):
         """
         Возвращает категорию с большой буквы.
         Присваивает сообщению флаг.
@@ -225,6 +242,19 @@ class MailService:
         """
         categ = mail.classify()
         self.flag_classified(mail.uid, categ)
+        logging.info(f"Classify email {mail.uid} in category {categ}")
+        self.logger.log(f"Classify email {mail.uid} in category {categ}")
+        return categ
+
+    def classify_mail(self, mail):
+        """
+        Возвращает категорию с большой буквы.
+        @param mail:
+        @return:
+        """
+        categ = mail.classify()
+        logging.info(f"Classify email {mail.uid} in category {categ}")
+        self.logger.log(f"Classify email {mail.uid} in category {categ}")
         return categ
 
     def flag_classified_mail(self, mail):
@@ -278,14 +308,72 @@ class MailService:
         if exist:
             if not self.mail_is_already_in_folder(mail.uid, f):
                 res = self.mailbox.copy(mail.uid, f)
+                logging.info(f"Copy mail {mail.uid} to folder {f}. Result {res}")
+                self.logger.log(f"Copy mail {mail.uid} to folder {f}. Result {res}")
             else:
                 res = 'Mail already in folder'
+                logging.info(f"Trying to copy mail {mail.uid} to folder {f}. {res}")
+                self.logger.log(f"Trying to copy mail {mail.uid} to folder {f}. {res}")
         else:
             res_create = self.mailbox.folder.create(f)
-            print(res_create)
+            logging.info(f"Trying create folder {f}. Result {res_create}")
+            self.logger.log(f"Trying create folder {f}. Result {res_create}")
             if 'OK' in res_create:
+                logging.info(f"Success create folder {f}")
+                self.logger.log(f"Success create folder {f}")
                 res = self.mailbox.copy(mail.uid, f)
+                logging.info(f"Trying to copy mail {mail.uid} to folder {f}. {res}")
+                self.logger.log(f"Trying to copy mail {mail.uid} to folder {f}. {res}")
         return res
 
+    def set_done(self, is_done):
+        self.done = is_done
+        if self.done:
+            print('set done')
+            logging.info("Stopped")
+            self.logger.log("Stopping...")
+
+    def check_updates(self):
+        self.done = False
+        self.isStopped = False
+        while not self.isStopped and not self.done:
+            # print('check updates')
+            # logging.info(f"debug")
+            connection_start_time = time.monotonic()
+            connection_live_time = 0.0
+            try:
+                # self.mailbox as mailbox:
+                logging.info(f"New connection {time.asctime()}")
+                self.logger.log(f"New connection {time.asctime()}")
+                    # print(f"New connection {time.asctime()}")
+                while not self.isStopped and connection_live_time < 29 * 60:
+                    try:
+                        responses = self.mailbox.idle.wait(timeout=10)
+                        if self.isStopped:
+                            break
+                        logging.info(f"{time.asctime()} IDLE responses: {responses}")
+                        self.logger.log(f"{time.asctime()} IDLE responses: {responses}")
+                        if responses:
+                            for msg in self.mailbox.fetch(A(seen=False)):
+                                logging.info(f"-> {msg.date} {msg.subject}")
+                                self.logger.log(f"-> {msg.date} {msg.subject}")
+                    except KeyboardInterrupt:
+                        logging.warning('~KeyboardInterrupt')
+                        self.done = True
+                        break
+                    connection_live_time = time.monotonic() - connection_start_time
+            except (TimeoutError, ConnectionError,
+                    imaplib.IMAP4.abort, MailboxLoginError, MailboxLogoutError,
+                    socket.herror, socket.gaierror, socket.timeout) as e:
+                logging.error(f'## Error {e}. {traceback.format_exc()}. reconnect in a minute...')
+                self.logger.log(f'## Error {e}. {traceback.format_exc()}. reconnect in a minute...')
+                time.sleep(60)
+        print('done updates')
+
     def logout(self):
+        self.done = True
+        logging.info("Logout")
         return self.mailbox.logout()
+
+    def stop(self):
+        self.isStopped = True
