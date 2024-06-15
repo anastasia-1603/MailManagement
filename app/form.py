@@ -22,6 +22,11 @@ def set_mail_service(mailservice):
     global mail_service
     mail_service = mailservice
 
+
+def on_destroy():
+    print('outer destroy')
+
+
 def copy_to_folder(mail, folder):
     if folder != 'Нет категории':
         res = mail_service.copy_to_folder(mail, folder)
@@ -42,15 +47,17 @@ class App(CTk):
         self.title("Классификация почты")
         self.configure(bg='lightblue')
 
-        container = CTkFrame(self)
-        container.pack(side="top", fill="both", expand=True)
-        container.grid_rowconfigure(0, weight=1)
-        container.grid_columnconfigure(0, weight=1)
-
-        self.show_auth_frame(container)
+        self.container = CTkFrame(self)
+        self.container.pack(side="top", fill="both", expand=True)
+        self.container.grid_rowconfigure(0, weight=1)
+        self.container.grid_columnconfigure(0, weight=1)
+        self.frames = {}
+        self.show_auth_frame(self.container)
 
     def show_auth_frame(self, container):
+
         frame = AuthFrame(parent=container, controller=self, log=self.log)
+        self.frames[AuthFrame] = frame
         frame.grid(row=0, column=0, sticky="nsew")
         frame.tkraise()
 
@@ -58,53 +65,67 @@ class App(CTk):
         if mail_service is not None:
             mail_service.set_done(True)
             frame = SettingsFrame(parent=container, controller=self)
+            self.frames[SettingsFrame] = frame
             frame.grid(row=0, column=0, sticky="nsew")
             frame.tkraise()
 
     def show_test_frame(self, container):
         frame = TestFrame(master=container, controller=self)
+        self.frames[TestFrame] = frame
         frame.grid(row=0, column=0, sticky="nsew")
         frame.tkraise()
 
     def show_last_msg_page(self, container):
         if mail_service is not None:
             frame = LastMessageFrame(master=container, controller=self)
+            self.frames[LastMessageFrame] = frame
             frame.grid(row=0, column=0, sticky="nsew")
             frame.tkraise()
 
-    def show_sort_folder_page(self, container):
-        if mail_service is not None:
-            frame = SortFolderPage(master=container, controller=self)
-            frame.grid(row=0, column=0, sticky="nsew")
-            frame.tkraise()
+    # def show_sort_folder_page(self, container):
+    #     if mail_service is not None:
+    #         frame = SortFolderPage(master=container, controller=self)
+    #         frame.grid(row=0, column=0, sticky="nsew")
+    #         frame.tkraise()
 
     def show_statistic_page(self, container):
         if mail_service is not None:
             frame = Statistic(master=container, controller=self)
+            self.frames[Statistic] = frame
             frame.grid(row=0, column=0, sticky="nsew")
             frame.tkraise()
 
     def show_sort_new_mails_page(self, container):
         if mail_service is not None:
             frame = SortNewMails(master=container, controller=self)
+            self.frames[SortNewMails] = frame
             frame.grid(row=0, column=0, sticky="nsew")
             frame.tkraise()
 
     def show_auto_classification_page(self, container):
         if mail_service is not None:
             frame = AutomaticClassification(master=container, controller=self, log=self.log)
-
+            self.frames[AutomaticClassification] = frame
             frame.grid(row=0, column=0, sticky="nsew")
             frame.tkraise()
 
     def logout(self, container):
         if mail_service is not None:
-            self.show_auth_frame(container)
             mail_service.logout()
+            self.show_auth_frame(container)
+
+    def on_destroy_frame(self):
+        print('on_destroy_frame')
+        frame = self.frames.get(AutomaticClassification)
+        if frame:
+            frame.stop()
+        for widgets in self.winfo_children():
+            widgets.destroy()
+        self.destroy()
 
 
 class AuthFrame(CTkFrame):
-    def __init__(self, parent: Any, controller, log, **kwargs):
+    def __init__(self, parent: Any, controller, log=None, **kwargs):
         super().__init__(parent, **kwargs)
         self.log = log
         welcome_label = CTkLabel(master=self, text="Добро пожаловать!",
@@ -527,26 +548,26 @@ class AutomaticClassification(CTkFrame):
         self.grid_columnconfigure(index=0, weight=1)
         self.isAlive = True
         lbl = CTkLabel(self, text="Автоматическая классификация", text_color=text_color, font=('Arial', 16))
-        lbl.grid(row=0, column=0, padx=10, pady=5)
-        start_button = CTkButton(master=self,
-                                 text="Начать классификацию",
-                                 command=lambda: self.start_classification(),
-                                 corner_radius=32,
-                                 font=('Arial', 14))
-        start_button.grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        lbl.grid(row=0, column=0, columnspan=2, padx=10, pady=5)
+        self.start_button = CTkButton(master=self,
+                                      text="Начать классификацию",
+                                      command=lambda: self.start_classification(),
+                                      corner_radius=32,
+                                      font=('Arial', 14))
+        self.start_button.grid(row=1, column=0, padx=10, pady=10, sticky="w")
         self.lbl2 = CTkLabel(self, text="Процесс не запущен", text_color=text_color, font=('Arial', 14))
-        self.lbl2.grid(row=1, column=1, padx=10, pady=5, sticky='w')
+        self.lbl2.grid(row=1, column=1, padx=10, pady=5, sticky='e')
 
         self.text_field = CTkTextbox(self)
         # self.text_field.configure(state='disabled')
         self.text_field.grid(row=2, column=0, padx=10,
                              pady=10, columnspan=2, sticky="nsew")
-        stop_button = CTkButton(master=self,
-                                text="Остановить",
-                                command=lambda: self.stop(),
-                                corner_radius=32,
-                                font=('Arial', 14))
-        stop_button.grid(row=3, column=1, padx=10, pady=10, sticky="w")
+        self.stop_button = CTkButton(master=self,
+                                     text="Остановить",
+                                     command=lambda: self.stop(),
+                                     corner_radius=32,
+                                     font=('Arial', 14))
+        self.stop_button.grid(row=3, column=1, padx=10, pady=10, sticky="w")
         back_button = CTkButton(master=self,
                                 text="Назад",
                                 command=lambda: controller.show_settings_frame(container=master),
@@ -555,6 +576,11 @@ class AutomaticClassification(CTkFrame):
         back_button.grid(row=3, column=0, padx=10, pady=10, sticky="w")
         self.log.setCallback(self.print_to_text_field)
         self.thread: threading.Thread = None
+        # self.stop_ = True
+
+    def __del__(self):
+        print('del')
+        self.stop()
 
     def back(self):
         self.controller.show_settings_frame(container=self.master)
@@ -565,12 +591,14 @@ class AutomaticClassification(CTkFrame):
         self.text_field.update()
 
     def stop(self):
-        mail_service.set_done(True)
-        mail_service.stop()
-        self.lbl2.configure(text="Процесс остановлен")
-        self.thread.join()
-        self.thread = None
-        self.log.log("Stopped")
+        if self.thread is not None:
+            mail_service.stop()
+            self.thread.join()
+            self.thread = None
+            # self.log.log("Stopped")
+            self.lbl2.configure(text="Процесс остановлен")
+            self.stop_button.configure(state="disabled")
+            self.start_button.configure(state="normal")
 
     def start_classification(self):
         if self.thread is None:
@@ -579,15 +607,19 @@ class AutomaticClassification(CTkFrame):
             print(threading.main_thread().name)
             print(self.thread.name)
             self.check_thread(self.thread)
-        # mail_service.check_updates()
+            self.start_button.configure(state="disabled")
+            self.stop_button.configure(state="normal")
 
     def check_thread(self, thread):
         if thread.is_alive():
             self.lbl2.configure(text="Процесс запущен")
-            self.after(100, lambda: self.check_thread(thread))
+            # self.log.log('thread alive')
+            self.after(10, lambda: self.check_thread(thread))
         else:
+            self.log.log('Завершено')
             self.lbl2.configure(text="Процесс остановлен")
 
 
 app = App()
+app.protocol('WM_DELETE_WINDOW', app.on_destroy_frame)
 app.mainloop()
